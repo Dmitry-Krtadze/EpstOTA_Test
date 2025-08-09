@@ -1,0 +1,72 @@
+# github.com/dz-vadim/MeetUpESP
+
+name: Build & Release ESP32
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ github.run_number }}
+      FW_FILENAME: firmware.bin
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # Генеруємо include/secrets.h з GitHub Secrets
+      - name: Create secrets.h
+        run: |
+          mkdir -p include
+          echo '#pragma once' > include/secrets.h
+          echo "#define TG_BOT_TOKEN \"${{ secrets.TG_BOT_TOKEN }}\"" >> include/secrets.h
+          echo "#define TG_CHAT_ID \"${{ secrets.TG_CHAT_ID }}\"" >> include/secrets.h
+          echo "#define GH_REPO \"${{ env.GH_REPO }}\"" >> include/secrets.h
+          echo "#define GH_FW_FILENAME \"${{ env.FW_FILENAME }}\"" >> include/secrets.h
+          echo "#define WM_AP_NAME \"ESP32-Setup\"" >> include/secrets.h
+          echo "#define WM_AP_PASS \"\"" >> include/secrets.h
+
+      - name: Build firmware
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: pio run -e esp32dev
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p out
+          cp .pio/build/esp32dev/firmware.bin out/firmware.bin
+          echo "{\"version\":\"${TAG}\",\"url\":\"https://github.com/${GH_REPO}/releases/download/${TAG}/${FW_FILENAME}\"}" > out/manifest.json
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Release ${{ env.TAG }}
+          draft: false
+          prerelease: false
+          files: |
+            out/firmware.bin
+            out/manifest.json
+
+      - name: Notify Telegram
+        if: ${{ env.TG_BOT_TOKEN != '' && env.TG_CHAT_ID != '' }}
+        run: |
+          MSG="✅ New firmware released: *${TAG}*\n\nDownload:\nhttps://github.com/${GH_REPO}/releases/tag/${TAG}\n\nSend */update* to update device."
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${TG_CHAT_ID}\",\"text\":\"${MSG}\",\"parse_mode\":\"Markdown\"}"
