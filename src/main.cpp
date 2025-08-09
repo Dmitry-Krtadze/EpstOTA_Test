@@ -6,15 +6,15 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <LiquidCrystal_I2C.h>
-#include "secrets.h" // из GitHub Actions
+#include "secrets.h" // from GitHub Actions
 
 WiFiClientSecure secured_client;
 UniversalTelegramBot bot(TG_BOT_TOKEN, secured_client);
 LiquidCrystal_I2C lcd(LCD_I2C_ADDR, LCD_COLS, LCD_ROWS);
 
 unsigned long lastCheck = 0;
-const long checkInterval = 3000; // 3 секунды
-bool updateAvailable = true; // тестово всегда true
+const long checkInterval = 3000; // 3 seconds
+bool updateAvailable = true; // temporarily always true
 
 String manifestUrl = "https://raw.githubusercontent.com/" + String(GH_REPO) + "/main/out/manifest.json";
 
@@ -29,18 +29,18 @@ void lcdMessage(const String &msg) {
 }
 
 void sendTelegramWithButton(String text) {
-  String keyboard = "[[{\"text\":\"Обновить\",\"callback_data\":\"update\"}]]";
+  String keyboard = "[[{\"text\":\"Update\",\"callback_data\":\"update\"}]]";
   bot.sendMessageWithInlineKeyboard(TG_CHAT_ID, text, "", keyboard);
 }
 
 void performOTA() {
-  lcdMessage("Загрузка OTA...");
+  lcdMessage("OTA Loading...");
   HTTPClient http;
   http.begin(manifestUrl);
   int httpCode = http.GET();
   if (httpCode != 200) {
-    lcdMessage("Ошибка manifest");
-    bot.sendMessage(TG_CHAT_ID, "Ошибка получения manifest.json");
+    lcdMessage("Manifest Error");
+    bot.sendMessage(TG_CHAT_ID, "Error fetching manifest.json");
     return;
   }
   String json = http.getString();
@@ -50,8 +50,8 @@ void performOTA() {
   deserializeJson(doc, json);
   String fwUrl = doc["url"].as<String>();
 
-  lcdMessage("Качаю прошивку");
-  bot.sendMessage(TG_CHAT_ID, "Начинаю обновление...");
+  lcdMessage("Downloading firmware");
+  bot.sendMessage(TG_CHAT_ID, "Starting update...");
 
   http.begin(fwUrl);
   int resp = http.GET();
@@ -61,18 +61,18 @@ void performOTA() {
       WiFiClient *client = http.getStreamPtr();
       Update.writeStream(*client);
       if (Update.end()) {
-        bot.sendMessage(TG_CHAT_ID, "Обновление завершено!");
-        lcdMessage("Готово, рестарт");
+        bot.sendMessage(TG_CHAT_ID, "Update completed!");
+        lcdMessage("Done, restarting");
         delay(2000);
         ESP.restart();
       } else {
-        bot.sendMessage(TG_CHAT_ID, "Ошибка OTA: " + String(Update.getError()));
-        lcdMessage("Ошибка OTA");
+        bot.sendMessage(TG_CHAT_ID, "OTA Error: " + String(Update.getError()));
+        lcdMessage("OTA Error");
       }
     }
   } else {
-    bot.sendMessage(TG_CHAT_ID, "Ошибка загрузки прошивки");
-    lcdMessage("Ошибка загрузки");
+    bot.sendMessage(TG_CHAT_ID, "Firmware download error");
+    lcdMessage("Download error");
   }
   http.end();
 }
@@ -81,12 +81,11 @@ void handleNewMessages(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id = String(bot.messages[i].chat_id);
     String text = bot.messages[i].text;
-    String callback_data = bot.messages[i].type == "callback_query" ? bot.messages[i].callback_query : "";
 
     if (text == "/start") {
-      sendTelegramWithButton("Доступно обновление прошивки.");
+      sendTelegramWithButton("Firmware update available.");
     }
-    if (text == "/update" || callback_data == "update") {
+    if (text == "/update") {
       performOTA();
     }
   }
@@ -97,7 +96,7 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
-  lcdMessage("Запуск WiFi...");
+  lcdMessage("Starting WiFi...");
 
   WiFiManager wm;
   if (!wm.autoConnect(WM_AP_NAME, WM_AP_PASS)) {
@@ -106,9 +105,9 @@ void setup() {
   }
 
   secured_client.setInsecure();
-  lcdMessage("WiFi подключен");
+  lcdMessage("WiFi connected");
 
-  sendTelegramWithButton("Устройство запущено. Доступно обновление.");
+  sendTelegramWithButton("Device started. Firmware update available.");
 }
 
 void loop() {
